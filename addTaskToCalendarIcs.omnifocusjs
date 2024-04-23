@@ -1,0 +1,108 @@
+/* global PlugIn */
+/* eslint spaced-comment: ["error", "always", { "exceptions": ["{"] }] */
+/*{
+	"type": "action",
+	"targets": ["omnifocus"],
+	"author": "Mark E. Schill",
+	"identifier": "net.cmschill.addTaskToCalendarIcs",
+	"version": "0.0.1",
+	"description": "This action will create an iCal (ics) file in the OmniFocus documents folder, matching the parameters of the currently selected task. On macOS, the file will be automatically opened causing the Calendar application to present a new event dialog.",
+	"label": "Schedule Task (ICS)",
+	"shortLabel": "iCal File",
+	"image": "calendar.badge.plus"
+}*/
+(() => {
+	function uuidv4() {
+	  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+		var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+		return v.toString(16);
+	  });
+	}
+
+	function dateToCalDateStamp(date){
+		var dateStamp = date.toISOString().split("-").join("").split(":").join("").replace(".","")
+		dateStamp = dateStamp.substring(0, dateStamp.length - 4) + "Z"
+		return dateStamp
+	}
+
+	const action = new PlugIn.Action(async function(selection, sender){
+
+		try {
+			task = selection.tasks[0]
+
+			taskID = task.id.primaryKey
+			taskURL = "omnifocus:///task/" + taskID
+			taskTitle = task.name
+			taskNote = task.note
+			if (!taskNote){
+				taskNote = ""
+			} else {
+				// Replace CR+LF and LF newlines with \n for iCal format
+				taskNote = taskNote.replace(/\n/g, '\\n');
+			}
+			taskDueDateStamp = dateToCalDateStamp(task.dueDate)
+			taskDuration = task.estimatedMinutes
+			if (!taskDuration){taskDuration = 60}
+			taskEndDate = task.dueDate
+			taskEndDate = new Date(
+				taskEndDate.setMinutes(taskEndDate.getMinutes() + taskDuration)
+			)
+			taskEndDateStamp = dateToCalDateStamp(taskEndDate)
+			dateStamp = dateToCalDateStamp(new Date())
+			uid = uuidv4()
+
+			calEventString = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//omni-automation.com
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+BEGIN:VEVENT
+SUMMARY:${taskTitle}
+UID:${uid}
+SEQUENCE:0
+STATUS:CONFIRMED
+TRANSP:TRANSPARENT
+RRULE:
+DTSTART:${taskDueDateStamp}
+DTEND:${taskEndDateStamp}
+DTSTAMP:${dateStamp}
+CATEGORIES:
+LOCATION:
+GEO:
+DESCRIPTION:${taskNote}
+URL:${taskURL}
+END:VEVENT
+END:VCALENDAR`
+
+			console.log(calEventString)
+
+			filename = 'event.ics'
+			textData = Data.fromString(calEventString)
+			wrapper = FileWrapper.withContents(filename, textData)
+
+			folderURL = URL.documentsDirectory
+			fileURL = folderURL.appendingPathComponent(filename)
+
+			wrapper.write(
+				fileURL,
+				[FileWrapper.WritingOptions.Atomic],
+				null
+			)
+
+			if (Device.current.mac){
+				fileURL.open()
+			}
+		}
+		catch(err){
+			if(!err.causedByUserCancelling){
+				new Alert(err.name, err.message).show()
+			}
+		}
+	});
+
+	action.validate = function(selection, sender){
+		return (selection.tasks.length === 1 && selection.tasks[0].dueDate != null)
+	};
+
+	return action;
+})();

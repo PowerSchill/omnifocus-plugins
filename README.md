@@ -16,6 +16,11 @@ Refer to the 'issues' in this repo for any known issues and planned changes/enha
 
 # Actions
 
+## Schedule Task (ICS)
+
+This action will create an iCal (ics) file in the OmniFocus documents folder, matching the parameters of the currently selected task. On macOS, the file will be automatically opened causing the Calendar application to present a new event dialog.
+
+This plugin was pulled from <https://omni-automation.com/omnifocus/task.html#OF0122> and modified for my needs.
 
 # Contributing
 
