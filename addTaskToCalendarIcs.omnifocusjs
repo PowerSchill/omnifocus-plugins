@@ -12,35 +12,45 @@
 	"image": "calendar.badge.plus"
 }*/
 (() => {
-	function uuidv4() {
-	  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-		var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-		return v.toString(16);
-	  });
-	}
+  function uuidv4() {
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
+      /[xy]/g,
+      function (c) {
+        var r = (Math.random() * 16) | 0,
+          v = c == "x" ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+      }
+    );
+  }
 
-	function dateToCalDateStamp(date){
-		var dateStamp = date.toISOString().split("-").join("").split(":").join("").replace(".","")
-		dateStamp = dateStamp.substring(0, dateStamp.length - 4) + "Z"
-		return dateStamp
-	}
+  function dateToCalDateStamp(date) {
+    var dateStamp = date
+      .toISOString()
+      .split("-")
+      .join("")
+      .split(":")
+      .join("")
+      .replace(".", "");
+    dateStamp = dateStamp.substring(0, dateStamp.length - 4) + "Z";
+    return dateStamp;
+  }
 
-	const action = new PlugIn.Action(async function(selection, sender){
+  const action = new PlugIn.Action(async function (selection, sender) {
+    task = selection.tasks[0];
 
-		try {
-			task = selection.tasks[0]
+    taskID = task.id.primaryKey;
+    taskURL = "omnifocus:///task/" + taskID;
+    taskTitle = task.name;
+    taskNote = task.note;
+    if (!taskNote) {
+      taskNote = "";
+    } else {
+      // Replace CR+LF and LF newlines with \n for iCal format
+      taskNote = taskNote.replace(/\n/g, "\\n");
+    }
 
-			taskID = task.id.primaryKey
-			taskURL = "omnifocus:///task/" + taskID
-			taskTitle = task.name
-			taskNote = task.note
-			if (!taskNote){
-				taskNote = ""
-			} else {
-				// Replace CR+LF and LF newlines with \n for iCal format
-				taskNote = taskNote.replace(/\n/g, '\\n');
-			}
-			taskDueDateStamp = dateToCalDateStamp(task.dueDate)
+    /*
+taskDueDateStamp = dateToCalDateStamp(task.dueDate)
 			taskDuration = task.estimatedMinutes
 			if (!taskDuration){taskDuration = 60}
 			taskEndDate = task.dueDate
@@ -50,8 +60,73 @@
 			taskEndDateStamp = dateToCalDateStamp(taskEndDate)
 			dateStamp = dateToCalDateStamp(new Date())
 			uid = uuidv4()
+      */
 
-			calEventString = `BEGIN:VCALENDAR
+    eventStartDate = new Date();
+    eventEndDate = new Date();
+    taskDuration = task.estimatedMinutes;
+
+    console.log("duration:", taskDuration);
+
+    if (task.dueDate) {
+      taskEndDate = task.dueDate;
+      taskStartDate = task.dueDate;
+      eventStartDate = new Date(
+        taskStartDate.setMinutes(taskStartDate.getMinutes() - taskDuration)
+      );
+      eventEndDate = new Date(taskEndDate.setMinutes(taskEndDate.getMinutes()));
+    }
+
+    uid = uuidv4();
+
+    console.log("eventStartDate:", eventStartDate);
+    console.log("eventEndDate:", eventEndDate);
+
+    var startDateField = new Form.Field.Date(
+      "startDateTime",
+      "Starting Time",
+      eventStartDate
+    );
+    var endDateField = new Form.Field.Date(
+      "endDateTime",
+      "Ending Time",
+      eventEndDate
+    );
+
+    var inputForm = new Form();
+    inputForm.addField(startDateField);
+    inputForm.addField(endDateField);
+
+    var formPrompt = "Enter event details:";
+    var buttonTitle = "Continue";
+    var formPromise = inputForm.show(formPrompt, buttonTitle);
+
+    inputForm.validate = function (formObject) {
+      startDateObject = formObject.values["startDateTime"];
+      endDateObject = formObject.values["endDateTime"];
+      //--> "2019-01-19T08:00:00.000Z"
+
+      // IS THE PROVIDED DATE LATER THAN NOW?
+      startDateStatus = startDateObject && startDateObject > new Date();
+      console.log("startDateStatus", startDateStatus);
+      endDateStatus = endDateObject && endDateObject > new Date();
+      console.log("EndDateStatus", endDateStatus);
+      positiveTime = startDateObject < endDateObject;
+      console.log("positiveTime", positiveTime);
+      validation =
+        startDateStatus && endDateStatus && positiveTime ? true : false;
+
+      return validation;
+    };
+
+    formPromise.then(function (formObject) {
+      eventStartDateStamp = dateToCalDateStamp(
+        formObject.values["startDateTime"]
+      );
+      eventEndDateStamp = dateToCalDateStamp(formObject.values["endDateTime"]);
+      currentDateStamp = dateToCalDateStamp(new Date());
+
+      calEventString = `BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//omni-automation.com
 CALSCALE:GREGORIAN
@@ -63,46 +138,37 @@ SEQUENCE:0
 STATUS:CONFIRMED
 TRANSP:TRANSPARENT
 RRULE:
-DTSTART:${taskDueDateStamp}
-DTEND:${taskEndDateStamp}
-DTSTAMP:${dateStamp}
+DTSTART:${eventStartDateStamp}
+DTEND:${eventEndDateStamp}
+DTSTAMP:${currentDateStamp}
 CATEGORIES:
 LOCATION:
 GEO:
 DESCRIPTION:${taskNote}
 URL:${taskURL}
 END:VEVENT
-END:VCALENDAR`
+END:VCALENDAR`;
 
-			console.log(calEventString)
+      console.log(calEventString);
 
-			filename = 'event.ics'
-			textData = Data.fromString(calEventString)
-			wrapper = FileWrapper.withContents(filename, textData)
+      filename = "event.ics";
+      textData = Data.fromString(calEventString);
+      wrapper = FileWrapper.withContents(filename, textData);
 
-			folderURL = URL.documentsDirectory
-			fileURL = folderURL.appendingPathComponent(filename)
+      folderURL = URL.documentsDirectory;
+      fileURL = folderURL.appendingPathComponent(filename);
 
-			wrapper.write(
-				fileURL,
-				[FileWrapper.WritingOptions.Atomic],
-				null
-			)
+      wrapper.write(fileURL, [FileWrapper.WritingOptions.Atomic], null);
 
-			if (Device.current.mac){
-				fileURL.open()
-			}
-		}
-		catch(err){
-			if(!err.causedByUserCancelling){
-				new Alert(err.name, err.message).show()
-			}
-		}
-	});
+      if (Device.current.mac) {
+        fileURL.open();
+      }
+    });
+  });
 
-	action.validate = function(selection, sender){
-		return (selection.tasks.length === 1 && selection.tasks[0].dueDate != null)
-	};
+  action.validate = function (selection, sender) {
+    return selection.tasks.length === 1;
+  };
 
-	return action;
+  return action;
 })();
